@@ -14,6 +14,10 @@ import {
     Tooltip,
     IconButton,
     Avatar,
+    FormControlLabel,
+    Checkbox,
+    FormGroup,
+    Fab,
 } from '@mui/material';
 import { System, loadSystems, getSystems } from '../data/systems';
 import { SystemNode, EdgeSource } from '../types/types';
@@ -26,6 +30,9 @@ import ExploreIcon from '@mui/icons-material/Explore';
 import SatelliteIcon from '@mui/icons-material/Satellite';
 import TrainIcon from '@mui/icons-material/Train';
 import LogoutIcon from '@mui/icons-material/Logout';
+import MenuIcon from '@mui/icons-material/Menu';
+import Sidebar from './Sidebar';
+import { QuickLink, SystemAlias, loadQuickLinks, loadAliases, getSystemDisplayName } from '../utils/storage';
 
 const getEdgeSourceIcon = (source: EdgeSource) => {
     switch (source) {
@@ -60,10 +67,17 @@ const getEdgeSourceLabel = (source: EdgeSource) => {
     }
 };
 
+interface CurrentLocation {
+    systemId: number;
+    systemName: string;
+    security: number;
+}
+
 export default function PathCalculator() {
     const [systems, setSystems] = useState<System[]>([]);
     const [startSystem, setStartSystem] = useState<System | null>(null);
     const [endSystem, setEndSystem] = useState<System | null>(null);
+    const [avoidSystems, setAvoidSystems] = useState<System[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isCalculating, setIsCalculating] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -75,6 +89,21 @@ export default function PathCalculator() {
     });
     const [mounted, setMounted] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [currentLocation, setCurrentLocation] = useState<CurrentLocation | null>(null);
+    const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+    
+    // Routing options
+    const [avoidLowSec, setAvoidLowSec] = useState(false);
+    const [avoidNullSec, setAvoidNullSec] = useState(false);
+    const [preferHighSec, setPreferHighSec] = useState(false);
+    const [useEveMetro, setUseEveMetro] = useState(true);
+    const [useEveScout, setUseEveScout] = useState(true);
+    const [useTripwire, setUseTripwire] = useState(false);
+    
+    // Sidebar and storage
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [quickLinks, setQuickLinks] = useState<QuickLink[]>([]);
+    const [aliases, setAliases] = useState<SystemAlias[]>([]);
 
     useEffect(() => {
         const initializeAuth = async () => {
@@ -108,6 +137,10 @@ export default function PathCalculator() {
             try {
                 await loadSystems();
                 setSystems(getSystems());
+                
+                // Load quick links and aliases from localStorage
+                setQuickLinks(loadQuickLinks());
+                setAliases(loadAliases());
             } catch (error) {
                 console.error('Failed to load systems:', error);
             } finally {
@@ -118,10 +151,99 @@ export default function PathCalculator() {
         loadData();
     }, []);
 
+    useEffect(() => {
+        const fetchLocation = async () => {
+            if (!characterInfo.isAuthenticated || !characterInfo.characterId) {
+                return;
+            }
+
+            setIsLoadingLocation(true);
+            try {
+                const response = await fetch('/api/location');
+                if (response.ok) {
+                    const location = await response.json();
+                    setCurrentLocation(location);
+                } else {
+                    console.error('Failed to fetch location');
+                }
+            } catch (error) {
+                console.error('Error fetching location:', error);
+            } finally {
+                setIsLoadingLocation(false);
+            }
+        };
+
+        fetchLocation();
+    }, [characterInfo.isAuthenticated, characterInfo.characterId]);
+
 
     const handleLogout = () => {
         // Import logout function dynamically to avoid SSR issues
         import('../utils/auth').then(({ logout }) => logout());
+    };
+
+    const handleSetCurrentAsStart = () => {
+        if (currentLocation) {
+            const system = systems.find(s => s.id === currentLocation.systemId);
+            if (system) {
+                setStartSystem(system);
+            }
+        }
+    };
+
+    const handleApplyQuickLink = (link: QuickLink) => {
+        // Find Jita system for Jita routes
+        const jitaSystem = systems.find(s => s.name === 'Jita');
+        
+        switch (link.type) {
+            case 'custom':
+                const start = systems.find(s => s.id === link.startSystemId);
+                const end = systems.find(s => s.id === link.endSystemId);
+                if (start && end) {
+                    setStartSystem(start);
+                    setEndSystem(end);
+                }
+                break;
+            case 'current-to-system':
+                if (currentLocation) {
+                    const currentSys = systems.find(s => s.id === currentLocation.systemId);
+                    const dest = systems.find(s => s.id === link.endSystemId);
+                    if (currentSys && dest) {
+                        setStartSystem(currentSys);
+                        setEndSystem(dest);
+                    }
+                }
+                break;
+            case 'fastest-to-jita':
+                if (currentLocation && jitaSystem) {
+                    const currentSys = systems.find(s => s.id === currentLocation.systemId);
+                    if (currentSys) {
+                        setStartSystem(currentSys);
+                        setEndSystem(jitaSystem);
+                    }
+                }
+                break;
+            case 'safe-to-jita':
+                if (currentLocation && jitaSystem) {
+                    const currentSys = systems.find(s => s.id === currentLocation.systemId);
+                    if (currentSys) {
+                        setStartSystem(currentSys);
+                        setEndSystem(jitaSystem);
+                    }
+                }
+                break;
+        }
+        
+        // Apply route options
+        setAvoidSystems(systems.filter(s => link.options.avoidSystems.includes(s.id)));
+        setAvoidLowSec(link.options.avoidLowSec);
+        setAvoidNullSec(link.options.avoidNullSec);
+        setPreferHighSec(link.options.preferHighSec);
+        setUseEveMetro(link.options.useEveMetro);
+        setUseEveScout(link.options.useEveScout);
+        setUseTripwire(link.options.useTripwire);
+        
+        setSidebarOpen(false);
     };
 
     const handleCalculate = async () => {
@@ -139,7 +261,14 @@ export default function PathCalculator() {
                 },
                 body: JSON.stringify({
                     from: startSystem.id,
-                    to: endSystem.id
+                    to: endSystem.id,
+                    avoidSystems: avoidSystems.map(s => s.id),
+                    avoidLowSec,
+                    avoidNullSec,
+                    preferHighSec,
+                    useEveMetro,
+                    useEveScout,
+                    useTripwire
                 }),
             });
 
@@ -174,14 +303,39 @@ export default function PathCalculator() {
     };
 
     return (
-        <Box sx={{ 
-            maxWidth: 600, 
-            mx: 'auto', 
-            mt: 4, 
-            p: 3,
-            minHeight: '100vh'
-        }}>
-            <Paper elevation={3} sx={{ p: 4, borderRadius: 2 }}>
+        <>
+            <Fab
+                color="primary"
+                aria-label="menu"
+                onClick={() => setSidebarOpen(true)}
+                sx={{
+                    position: 'fixed',
+                    top: 16,
+                    left: 16,
+                }}
+            >
+                <MenuIcon />
+            </Fab>
+
+            <Sidebar
+                open={sidebarOpen}
+                onClose={() => setSidebarOpen(false)}
+                quickLinks={quickLinks}
+                setQuickLinks={setQuickLinks}
+                aliases={aliases}
+                setAliases={setAliases}
+                systems={systems}
+                onApplyQuickLink={handleApplyQuickLink}
+            />
+
+            <Box sx={{ 
+                maxWidth: 600, 
+                mx: 'auto', 
+                mt: 4, 
+                p: 3,
+                minHeight: '100vh'
+            }}>
+                <Paper elevation={3} sx={{ p: 4, borderRadius: 2 }}>
                 <Stack spacing={3}>
                     <Box sx={{ textAlign: 'center', mb: 2 }}>
                         <Typography variant="h4" component="h1" gutterBottom>
@@ -234,6 +388,37 @@ export default function PathCalculator() {
                         </Button>
                     ))}
 
+                    {characterInfo.isAuthenticated && currentLocation && (
+                        <Paper variant="outlined" sx={{ p: 2 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                                <Typography variant="subtitle2">
+                                    Current Location
+                                </Typography>
+                                {isLoadingLocation && <CircularProgress size={16} />}
+                            </Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                                    {currentLocation.systemName}
+                                </Typography>
+                                <Chip 
+                                    icon={<SecurityIcon />}
+                                    label={currentLocation.security.toFixed(1)}
+                                    color={getSecurityColor(currentLocation.security)}
+                                    size="small"
+                                />
+                            </Box>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                fullWidth
+                                onClick={handleSetCurrentAsStart}
+                                disabled={isLoading || isCalculating}
+                            >
+                                Set as Start System
+                            </Button>
+                        </Paper>
+                    )}
+
                     <Divider/>
 
                     <Stack spacing={2}>
@@ -241,7 +426,7 @@ export default function PathCalculator() {
                             value={startSystem}
                             onChange={(_, newValue) => setStartSystem(newValue)}
                             options={systems}
-                            getOptionLabel={(option) => option.name}
+                            getOptionLabel={(option) => getSystemDisplayName(option.id, option.name, aliases)}
                             isOptionEqualToValue={(option, value) => option.id === value.id}
                             renderInput={(params) => (
                                 <TextField
@@ -260,7 +445,7 @@ export default function PathCalculator() {
                             value={endSystem}
                             onChange={(_, newValue) => setEndSystem(newValue)}
                             options={systems}
-                            getOptionLabel={(option) => option.name}
+                            getOptionLabel={(option) => getSystemDisplayName(option.id, option.name, aliases)}
                             isOptionEqualToValue={(option, value) => option.id === value.id}
                             renderInput={(params) => (
                                 <TextField
@@ -274,6 +459,94 @@ export default function PathCalculator() {
                             loadingText="Loading systems..."
                             noOptionsText="No systems found"
                         />
+
+                        <Autocomplete
+                            multiple
+                            value={avoidSystems}
+                            onChange={(_, newValue) => setAvoidSystems(newValue)}
+                            options={systems}
+                            getOptionLabel={(option) => getSystemDisplayName(option.id, option.name, aliases)}
+                            isOptionEqualToValue={(option, value) => option.id === value.id}
+                            renderInput={(params) => (
+                                <TextField
+                                    {...params}
+                                    label="Avoid Systems (Optional)"
+                                    disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
+                                    fullWidth
+                                />
+                            )}
+                            loading={isLoading}
+                            loadingText="Loading systems..."
+                            noOptionsText="No systems found"
+                        />
+
+                        <Paper variant="outlined" sx={{ p: 2 }}>
+                            <Typography variant="subtitle2" gutterBottom>
+                                Route Options
+                            </Typography>
+                            <FormGroup>
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={avoidLowSec}
+                                            onChange={(e) => setAvoidLowSec(e.target.checked)}
+                                            disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
+                                        />
+                                    }
+                                    label="Avoid Low-Sec"
+                                />
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={avoidNullSec}
+                                            onChange={(e) => setAvoidNullSec(e.target.checked)}
+                                            disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
+                                        />
+                                    }
+                                    label="Avoid Null-Sec"
+                                />
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={preferHighSec}
+                                            onChange={(e) => setPreferHighSec(e.target.checked)}
+                                            disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
+                                        />
+                                    }
+                                    label="Prefer High-Sec"
+                                />
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={useEveScout}
+                                            onChange={(e) => setUseEveScout(e.target.checked)}
+                                            disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
+                                        />
+                                    }
+                                    label="Use EVE-Scout (Thera/Turnur connections)"
+                                />
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={useTripwire}
+                                            onChange={(e) => setUseTripwire(e.target.checked)}
+                                            disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
+                                        />
+                                    }
+                                    label="Use Tripwire (requires configuration)"
+                                />
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={useEveMetro}
+                                            onChange={(e) => setUseEveMetro(e.target.checked)}
+                                            disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
+                                        />
+                                    }
+                                    label="Use EVE-Metro"
+                                />
+                            </FormGroup>
+                        </Paper>
                     </Stack>
 
                     <Button
@@ -360,5 +633,6 @@ export default function PathCalculator() {
                 </Stack>
             </Paper>
         </Box>
+        </>
     );
 }
