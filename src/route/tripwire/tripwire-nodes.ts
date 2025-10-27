@@ -23,18 +23,20 @@ const getSystem = (systemId: string): SystemData | undefined => {
     return systemsMap.get(parseInt(systemId))
 }
 
-const TRIPWIRE_AUTH = {
-    auth: {
-        username: process.env.TRIPWIRE_USER || '',
-        password: process.env.TRIPWIRE_PASSWORD || ''
-    }
-}
-
-const TRIPWIRE_MASK = process.env.TRIPWIRE_MASK || '0'
-
 export const fetchDataFromTripwire = async (): Promise<
     [TripwireWormhole[], TripwireSignature[]]
 > => {
+    // Create auth object at runtime, not at module load time
+    // This ensures environment variables are loaded
+    const TRIPWIRE_AUTH = {
+        auth: {
+            username: process.env.TRIPWIRE_USER || '',
+            password: process.env.TRIPWIRE_PASSWORD || ''
+        }
+    }
+    
+    const TRIPWIRE_MASK = process.env.TRIPWIRE_MASK || '0'
+    
     const { data: wormholeData } = await axios.get<TripwireWormhole[]>(
         `${process.env.TRIPWIRE_HOST}/api.php?q=/wormholes&maskID=${TRIPWIRE_MASK}`,
         TRIPWIRE_AUTH
@@ -47,6 +49,7 @@ export const fetchDataFromTripwire = async (): Promise<
     const wormholes = wormholeData.filter((wh) => {
         return wh.initialID !== undefined && wh.secondaryID !== undefined
     })
+    
     return [wormholes, signatures]
 }
 
@@ -58,6 +61,7 @@ export const getTripwireNodes = async (): Promise<Map<SystemId, SystemNode>> => 
         const signatureData: TripwireSignature[] = Object.values(tripwireData[1])
         const wormholeSignatureData = signatureData.filter((sig) => sig.type === 'wormhole')
 
+        const TRIPWIRE_MASK = process.env.TRIPWIRE_MASK || '0'
         const edges: TripSystemEdge[] = wormholeData
             .filter((wh) => wh.maskID === TRIPWIRE_MASK)
             .flatMap((wh) => {

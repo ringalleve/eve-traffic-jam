@@ -9,6 +9,13 @@ import { logUsage } from '../../src/utils/logging'
 interface PathRequest {
     from: number
     to: number
+    avoidSystems?: number[]
+    avoidLowSec?: boolean
+    avoidNullSec?: boolean
+    preferHighSec?: boolean
+    useEveMetro?: boolean
+    useEveScout?: boolean
+    useTripwire?: boolean
 }
 
 const configPath = path.resolve(process.cwd(), 'config.json');
@@ -42,7 +49,17 @@ export default async function handler(
             return
         }
 
-        const { from, to } = req.body as PathRequest
+        const { 
+            from, 
+            to, 
+            avoidSystems = [], 
+            avoidLowSec = false, 
+            avoidNullSec = false,
+            preferHighSec = false,
+            useEveMetro = true,
+            useEveScout = true,
+            useTripwire = false
+        } = req.body as PathRequest
 
         if (!from || !to) {
             res.status(400).json({ message: 'Missing required parameters: from and to system IDs' })
@@ -52,10 +69,13 @@ export default async function handler(
         const input: CalculateRouteInput = {
             startSystemId: from,
             endSystemId: to,
-            avoidSystemIds: [],
-            useEveScout: true,
-            useTripwire: true,
-            useEveMetro: true,
+            avoidSystemIds: avoidSystems,
+            avoidLowSec,
+            avoidNullSec,
+            preferHighSec,
+            useEveScout,
+            useTripwire,
+            useEveMetro,
             shipSize: 'Frigate'
         }
 
@@ -75,6 +95,10 @@ export default async function handler(
                 usedEveScout: input.useEveScout,
                 usedTripwire: input.useTripwire,
                 usedEveMetro: input.useEveMetro,
+                avoidSystemsCount: avoidSystems.length,
+                avoidLowSec,
+                avoidNullSec,
+                preferHighSec
             }
         });
 

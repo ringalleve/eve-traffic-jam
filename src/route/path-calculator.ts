@@ -8,6 +8,9 @@ export interface CalculateRouteInput {
     startSystemId: number
     endSystemId: number
     avoidSystemIds: number[]
+    avoidLowSec: boolean
+    avoidNullSec: boolean
+    preferHighSec: boolean
     useEveScout: boolean
     useTripwire: boolean
     useEveMetro: boolean
@@ -170,6 +173,9 @@ export const calculateRoute = async (
         startSystemId,
         endSystemId,
         avoidSystemIds,
+        avoidLowSec,
+        avoidNullSec,
+        preferHighSec,
         useEveScout,
         useTripwire,
         useEveMetro
@@ -195,13 +201,39 @@ export const calculateRoute = async (
 
     const mergedNodes = mergeNodes(nodesToMerge)
     
+    // Build systems to avoid based on security status
+    const systemsToAvoid = new Set<string>([...avoidSystemIds].map(id => `${id}`))
+    
+    mergedNodes.forEach((node) => {
+        const security = node.systemSecurityStatus
+        
+        // Add to avoid list based on security preferences
+        if (avoidLowSec && security >= 0.0 && security < 0.5) {
+            systemsToAvoid.add(`${node.systemId}`)
+        }
+        if (avoidNullSec && security < 0.0) {
+            systemsToAvoid.add(`${node.systemId}`)
+        }
+    })
+    
     const graph = new DijkstraGraph()
     const neighbors: { [key: string]: { [key: string]: number } } = {}
 
     mergedNodes.forEach((node) => {
         const nodeNeighbors: { [key: string]: number } = {}
         node.systemEdges.forEach((edge) => {
-            nodeNeighbors[edge.systemId] = 1
+            // Calculate edge weight based on preferences
+            let weight = 1
+            
+            // If preferring high-sec, add penalty for non-high-sec systems
+            if (preferHighSec) {
+                const edgeSecurity = edge.systemSecurityStatus
+                if (edgeSecurity < 0.5) {
+                    weight = edgeSecurity < 0.0 ? 10 : 5  // Higher penalty for null-sec
+                }
+            }
+            
+            nodeNeighbors[edge.systemId] = weight
         })
         neighbors[node.systemId] = nodeNeighbors
         try {
@@ -215,7 +247,7 @@ export const calculateRoute = async (
     })
 
     const optimalRoute: string[] = graph.path(`${startSystemId}`, `${endSystemId}`, {
-        avoid: [...avoidSystemIds].map((i) => `${i}`)
+        avoid: Array.from(systemsToAvoid)
     }) as string[]
 
     if (optimalRoute === null) return []
