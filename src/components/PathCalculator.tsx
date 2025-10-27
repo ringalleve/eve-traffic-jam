@@ -4,68 +4,24 @@ import {
     Button,
     Stack,
     Typography,
-    Autocomplete,
-    TextField,
     CircularProgress,
     Alert,
     Paper,
     Divider,
-    Chip,
-    Tooltip,
-    IconButton,
-    Avatar,
-    FormControlLabel,
-    Checkbox,
-    FormGroup,
     Fab,
 } from '@mui/material';
 import { System, loadSystems, getSystems } from '../data/systems';
-import { SystemNode, EdgeSource } from '../types/types';
-import { getCharacterInfo, CharacterInfo, refreshSession } from '../utils/auth';
-import SecurityIcon from '@mui/icons-material/Security';
+import { SystemNode } from '../types/types';
+import { getCharacterInfo, CharacterInfo, refreshSession, logout } from '../utils/auth';
 import RouteIcon from '@mui/icons-material/Route';
-import InfoIcon from '@mui/icons-material/Info';
-import PublicIcon from '@mui/icons-material/Public';
-import ExploreIcon from '@mui/icons-material/Explore';
-import SatelliteIcon from '@mui/icons-material/Satellite';
-import TrainIcon from '@mui/icons-material/Train';
-import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu';
 import Sidebar from './Sidebar';
-import { QuickLink, SystemAlias, loadQuickLinks, loadAliases, getSystemDisplayName } from '../utils/storage';
-
-const getEdgeSourceIcon = (source: EdgeSource) => {
-    switch (source) {
-        case 'k-space':
-            return <PublicIcon fontSize="small" />;
-        case 'eve-scout-thera':
-        case 'eve-scout-turnur':
-            return <ExploreIcon fontSize="small" />;
-        case 'tripwire':
-            return <SatelliteIcon fontSize="small" />;
-        case 'eve-metro':
-            return <TrainIcon fontSize="small" />;
-        default:
-            return <PublicIcon fontSize="small" />;
-    }
-};
-
-const getEdgeSourceLabel = (source: EdgeSource) => {
-    switch (source) {
-        case 'k-space':
-            return 'K-Space';
-        case 'eve-scout-thera':
-            return 'Thera';
-        case 'eve-scout-turnur':
-            return 'Turnur';
-        case 'tripwire':
-            return 'Tripwire';
-        case 'eve-metro':
-            return 'EVE Metro';
-        default:
-            return source;
-    }
-};
+import CharacterProfile from './CharacterProfile';
+import CurrentLocationCard from './CurrentLocationCard';
+import RouteForm from './RouteForm';
+import RouteOptionsPanel from './RouteOptionsPanel';
+import RouteDetails from './RouteDetails';
+import { QuickLink, SystemAlias, loadQuickLinks, loadAliases } from '../utils/storage';
 
 interface CurrentLocation {
     systemId: number;
@@ -104,6 +60,23 @@ export default function PathCalculator() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [quickLinks, setQuickLinks] = useState<QuickLink[]>([]);
     const [aliases, setAliases] = useState<SystemAlias[]>([]);
+
+    // Open sidebar by default on large screens
+    useEffect(() => {
+        const handleResize = () => {
+            if (window.innerWidth >= 1200) {
+                setSidebarOpen(true);
+            } else {
+                setSidebarOpen(false);
+            }
+        };
+
+        // Set initial state
+        handleResize();
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     useEffect(() => {
         const initializeAuth = async () => {
@@ -175,12 +148,6 @@ export default function PathCalculator() {
 
         fetchLocation();
     }, [characterInfo.isAuthenticated, characterInfo.characterId]);
-
-
-    const handleLogout = () => {
-        // Import logout function dynamically to avoid SSR issues
-        import('../utils/auth').then(({ logout }) => logout());
-    };
 
     const handleSetCurrentAsStart = () => {
         if (currentLocation) {
@@ -296,46 +263,82 @@ export default function PathCalculator() {
         }
     };
 
-    const getSecurityColor = (security: number) => {
-        if (security >= 0.5) return 'success';
-        if (security >= 0.0) return 'warning';
-        return 'error';
-    };
-
     return (
         <>
+            {/* Menu button - only show on mobile/tablet or when sidebar closed on desktop */}
             <Fab
                 color="primary"
                 aria-label="menu"
-                onClick={() => setSidebarOpen(true)}
+                onClick={() => setSidebarOpen(!sidebarOpen)}
                 sx={{
                     position: 'fixed',
                     top: 16,
                     left: 16,
+                    zIndex: 1100,
+                    display: { 
+                        xs: 'flex', 
+                        lg: sidebarOpen ? 'none' : 'flex' 
+                    },
                 }}
             >
                 <MenuIcon />
             </Fab>
 
-            <Sidebar
-                open={sidebarOpen}
-                onClose={() => setSidebarOpen(false)}
-                quickLinks={quickLinks}
-                setQuickLinks={setQuickLinks}
-                aliases={aliases}
-                setAliases={setAliases}
-                systems={systems}
-                onApplyQuickLink={handleApplyQuickLink}
-            />
-
             <Box sx={{ 
-                maxWidth: 600, 
+                maxWidth: { xs: 600, md: route ? 1200 : 600, lg: sidebarOpen && route ? 1600 : sidebarOpen ? 1000 : (route ? 1200 : 600) }, 
                 mx: 'auto', 
                 mt: 4, 
                 p: 3,
                 minHeight: '100vh'
             }}>
-                <Paper elevation={3} sx={{ p: 4, borderRadius: 2 }}>
+                <Box sx={{ 
+                    display: 'flex', 
+                    gap: 0,
+                    flexDirection: { xs: 'column', md: route ? 'row' : 'column', lg: sidebarOpen ? 'row' : (route ? 'row' : 'column') },
+                    alignItems: 'stretch'
+                }}>
+                {/* Sidebar on left for large screens */}
+                <Box sx={{ 
+                    display: { xs: 'none', lg: sidebarOpen ? 'block' : 'none' },
+                    flex: '0 0 400px',
+                }}>
+                    <Sidebar
+                        open={sidebarOpen}
+                        onClose={() => setSidebarOpen(false)}
+                        quickLinks={quickLinks}
+                        setQuickLinks={setQuickLinks}
+                        aliases={aliases}
+                        setAliases={setAliases}
+                        systems={systems}
+                        onApplyQuickLink={handleApplyQuickLink}
+                    />
+                </Box>
+
+                {/* Sidebar for mobile and tablet */}
+                <Box sx={{ display: { xs: 'block', lg: 'none' } }}>
+                    <Sidebar
+                        open={sidebarOpen}
+                        onClose={() => setSidebarOpen(false)}
+                        quickLinks={quickLinks}
+                        setQuickLinks={setQuickLinks}
+                        aliases={aliases}
+                        setAliases={setAliases}
+                        systems={systems}
+                        onApplyQuickLink={handleApplyQuickLink}
+                    />
+                </Box>
+
+                <Paper elevation={3} sx={{ 
+                    p: 4, 
+                    borderRadius: { 
+                        xs: 2, 
+                        md: route ? '8px 0 0 8px' : 2,
+                        lg: sidebarOpen && route ? '0' : sidebarOpen ? '0 8px 8px 0' : (route ? '8px 0 0 8px' : 2)
+                    }, 
+                    flex: { xs: '1 1 auto', md: route ? '0 0 600px' : '1 1 auto', lg: route ? '0 0 600px' : '1 1 auto' }, 
+                    maxWidth: { xs: '100%', md: route ? '600px' : '600px' }, 
+                    mx: { xs: 0, md: route ? 0 : 'auto', lg: sidebarOpen && !route ? 0 : (route ? 0 : 'auto') } 
+                }}>
                 <Stack spacing={3}>
                     <Box sx={{ textAlign: 'center', mb: 2 }}>
                         <Typography variant="h4" component="h1" gutterBottom>
@@ -346,208 +349,56 @@ export default function PathCalculator() {
                         </Typography>
                     </Box>
 
-                    {mounted && (isRefreshing ? (
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <CircularProgress size={24} />
-                        </Box>
-                    ) : characterInfo.isAuthenticated && characterInfo.characterName ? (
-                        <Box 
-                            sx={{ 
-                                display: 'flex', 
-                                alignItems: 'center',
-                                justifyContent: 'flex-end',
-                                flexDirection: 'column',
-                                gap: 1
-                            }}
-                        >
-                            <Avatar
-                                src={`https://images.evetech.net/characters/${characterInfo.characterId}/portrait?size=256`}
-                                sx={{ width: 128, height: 128 }}
-                            />
-                            <Typography variant="body1" sx={{ mx: 1 }}>
-                                {characterInfo.characterName}
-                            </Typography>
-                            <IconButton
-                                onClick={handleLogout}
-                                size="small"
-                                sx={{ ml: 1 }}
-                            >
-                                <LogoutIcon />
-                            </IconButton>
-                        </Box>
-                    ) : (
-                        <Button
-                            variant="contained"
-                            color="primary"
-                            fullWidth
-                            size="large"
-                            href="/api/auth/login"
-                            startIcon={<SecurityIcon />}
-                        >
-                            Login with EVE SSO
-                        </Button>
-                    ))}
+                    <CharacterProfile 
+                        characterInfo={characterInfo}
+                        isRefreshing={isRefreshing}
+                        mounted={mounted}
+                        onLogout={logout}
+                    />
 
-                    {characterInfo.isAuthenticated && currentLocation && (
-                        <Paper variant="outlined" sx={{ p: 2 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                                <Typography variant="subtitle2">
-                                    Current Location
-                                </Typography>
-                                {isLoadingLocation && <CircularProgress size={16} />}
-                            </Box>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
-                                    {currentLocation.systemName}
-                                </Typography>
-                                <Chip 
-                                    icon={<SecurityIcon />}
-                                    label={currentLocation.security.toFixed(1)}
-                                    color={getSecurityColor(currentLocation.security)}
-                                    size="small"
-                                />
-                            </Box>
-                            <Button
-                                variant="outlined"
-                                size="small"
-                                fullWidth
-                                onClick={handleSetCurrentAsStart}
-                                disabled={isLoading || isCalculating}
-                            >
-                                Set as Start System
-                            </Button>
-                        </Paper>
+                    {characterInfo.isAuthenticated && (
+                        <CurrentLocationCard
+                            currentLocation={currentLocation}
+                            isLoadingLocation={isLoadingLocation}
+                            isLoading={isLoading}
+                            isCalculating={isCalculating}
+                            onSetAsStart={handleSetCurrentAsStart}
+                        />
                     )}
 
                     <Divider/>
 
-                    <Stack spacing={2}>
-                        <Autocomplete
-                            value={startSystem}
-                            onChange={(_, newValue) => setStartSystem(newValue)}
-                            options={systems}
-                            getOptionLabel={(option) => getSystemDisplayName(option.id, option.name, aliases)}
-                            isOptionEqualToValue={(option, value) => option.id === value.id}
-                            renderInput={(params) => (
-                                <TextField
-                                    {...params}
-                                    label="Start System"
-                                    disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
-                                    fullWidth
-                                />
-                            )}
-                            loading={isLoading}
-                            loadingText="Loading systems..."
-                            noOptionsText="No systems found"
-                        />
+                    <RouteForm
+                        systems={systems}
+                        startSystem={startSystem}
+                        endSystem={endSystem}
+                        avoidSystems={avoidSystems}
+                        isLoading={isLoading}
+                        isCalculating={isCalculating}
+                        isAuthenticated={characterInfo.isAuthenticated}
+                        aliases={aliases}
+                        onStartSystemChange={setStartSystem}
+                        onEndSystemChange={setEndSystem}
+                        onAvoidSystemsChange={setAvoidSystems}
+                    />
 
-                        <Autocomplete
-                            value={endSystem}
-                            onChange={(_, newValue) => setEndSystem(newValue)}
-                            options={systems}
-                            getOptionLabel={(option) => getSystemDisplayName(option.id, option.name, aliases)}
-                            isOptionEqualToValue={(option, value) => option.id === value.id}
-                            renderInput={(params) => (
-                                <TextField
-                                    {...params}
-                                    label="End System"
-                                    disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
-                                    fullWidth
-                                />
-                            )}
-                            loading={isLoading}
-                            loadingText="Loading systems..."
-                            noOptionsText="No systems found"
-                        />
-
-                        <Autocomplete
-                            multiple
-                            value={avoidSystems}
-                            onChange={(_, newValue) => setAvoidSystems(newValue)}
-                            options={systems}
-                            getOptionLabel={(option) => getSystemDisplayName(option.id, option.name, aliases)}
-                            isOptionEqualToValue={(option, value) => option.id === value.id}
-                            renderInput={(params) => (
-                                <TextField
-                                    {...params}
-                                    label="Avoid Systems (Optional)"
-                                    disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
-                                    fullWidth
-                                />
-                            )}
-                            loading={isLoading}
-                            loadingText="Loading systems..."
-                            noOptionsText="No systems found"
-                        />
-
-                        <Paper variant="outlined" sx={{ p: 2 }}>
-                            <Typography variant="subtitle2" gutterBottom>
-                                Route Options
-                            </Typography>
-                            <FormGroup>
-                                <FormControlLabel
-                                    control={
-                                        <Checkbox
-                                            checked={avoidLowSec}
-                                            onChange={(e) => setAvoidLowSec(e.target.checked)}
-                                            disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
-                                        />
-                                    }
-                                    label="Avoid Low-Sec"
-                                />
-                                <FormControlLabel
-                                    control={
-                                        <Checkbox
-                                            checked={avoidNullSec}
-                                            onChange={(e) => setAvoidNullSec(e.target.checked)}
-                                            disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
-                                        />
-                                    }
-                                    label="Avoid Null-Sec"
-                                />
-                                <FormControlLabel
-                                    control={
-                                        <Checkbox
-                                            checked={preferHighSec}
-                                            onChange={(e) => setPreferHighSec(e.target.checked)}
-                                            disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
-                                        />
-                                    }
-                                    label="Prefer High-Sec"
-                                />
-                                <FormControlLabel
-                                    control={
-                                        <Checkbox
-                                            checked={useEveScout}
-                                            onChange={(e) => setUseEveScout(e.target.checked)}
-                                            disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
-                                        />
-                                    }
-                                    label="Use EVE-Scout (Thera/Turnur connections)"
-                                />
-                                <FormControlLabel
-                                    control={
-                                        <Checkbox
-                                            checked={useTripwire}
-                                            onChange={(e) => setUseTripwire(e.target.checked)}
-                                            disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
-                                        />
-                                    }
-                                    label="Use Tripwire (requires configuration)"
-                                />
-                                <FormControlLabel
-                                    control={
-                                        <Checkbox
-                                            checked={useEveMetro}
-                                            onChange={(e) => setUseEveMetro(e.target.checked)}
-                                            disabled={isLoading || isCalculating || !characterInfo.isAuthenticated}
-                                        />
-                                    }
-                                    label="Use EVE-Metro"
-                                />
-                            </FormGroup>
-                        </Paper>
-                    </Stack>
+                    <RouteOptionsPanel
+                        avoidLowSec={avoidLowSec}
+                        avoidNullSec={avoidNullSec}
+                        preferHighSec={preferHighSec}
+                        useEveScout={useEveScout}
+                        useTripwire={useTripwire}
+                        useEveMetro={useEveMetro}
+                        isLoading={isLoading}
+                        isCalculating={isCalculating}
+                        isAuthenticated={characterInfo.isAuthenticated}
+                        onAvoidLowSecChange={setAvoidLowSec}
+                        onAvoidNullSecChange={setAvoidNullSec}
+                        onPreferHighSecChange={setPreferHighSec}
+                        onUseEveScoutChange={setUseEveScout}
+                        onUseTripwireChange={setUseTripwire}
+                        onUseEveMetroChange={setUseEveMetro}
+                    />
 
                     <Button
                         variant="contained"
@@ -578,60 +429,15 @@ export default function PathCalculator() {
                     )}
 
                     {route && (
-                        <Paper variant="outlined" sx={{ p: 2 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                <Typography variant="h6" sx={{ flexGrow: 1 }}>
-                                    Route Details
-                                </Typography>
-                                <Tooltip title="Route information">
-                                    <IconButton size="small">
-                                        <InfoIcon />
-                                    </IconButton>
-                                </Tooltip>
-                            </Box>
-                            <Stack spacing={1}>
-                                {route.map((system, index) => (
-                                    <Box 
-                                        key={index}
-                                        sx={{ 
-                                            display: 'flex', 
-                                            alignItems: 'center',
-                                            p: 1,
-                                            borderRadius: 1,
-                                            bgcolor: index % 2 === 0 ? 'action.hover' : 'background.paper'
-                                        }}
-                                    >
-                                        <Typography sx={{ minWidth: 30, fontWeight: 'bold' }}>
-                                            {index + 1}.
-                                        </Typography>
-                                        <Typography sx={{ flexGrow: 1 }}>
-                                            {system.systemName}
-                                        </Typography>
-                                        <Stack direction="row" spacing={1}>
-                                            <Chip 
-                                                icon={<SecurityIcon />}
-                                                label={system.systemSecurityStatus.toFixed(1)}
-                                                color={getSecurityColor(system.systemSecurityStatus)}
-                                                size="small"
-                                            />
-                                            {index < route.length - 1 && system.systemEdges[0]?.edgeSource && (
-                                                <Tooltip title={`Connection via ${getEdgeSourceLabel(system.systemEdges[0].edgeSource)}`}>
-                                                    <Chip
-                                                        icon={getEdgeSourceIcon(system.systemEdges[0].edgeSource)}
-                                                        label={getEdgeSourceLabel(system.systemEdges[0].edgeSource)}
-                                                        size="small"
-                                                        variant="outlined"
-                                                    />
-                                                </Tooltip>
-                                            )}
-                                        </Stack>
-                                    </Box>
-                                ))}
-                            </Stack>
-                        </Paper>
+                        <Box sx={{ display: { xs: 'block', md: 'none' } }}>
+                            <RouteDetails route={route} isMobile={true} />
+                        </Box>
                     )}
                 </Stack>
             </Paper>
+            
+            {route && <RouteDetails route={route} isMobile={false} />}
+            </Box>
         </Box>
         </>
     );

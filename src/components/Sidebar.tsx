@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-    Drawer,
     Box,
     Typography,
     IconButton,
@@ -25,11 +24,13 @@ import {
     Tabs,
     Tab,
     Autocomplete,
+    Paper,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import AddIcon from '@mui/icons-material/Add';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import CloseIcon from '@mui/icons-material/Close';
 import { QuickLink, SystemAlias, saveQuickLinks, saveAliases, getSystemDisplayName } from '../utils/storage';
 import { System } from '../data/systems';
 
@@ -199,11 +200,57 @@ export default function Sidebar({
 
     return (
         <>
-            <Drawer anchor="left" open={open} onClose={onClose}>
-                <Box sx={{ width: 400, p: 2 }}>
-                    <Typography variant="h6" gutterBottom>
+            {/* Backdrop */}
+            {open && (
+                <Box
+                    onClick={onClose}
+                    sx={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        bgcolor: 'rgba(0, 0, 0, 0.5)',
+                        zIndex: 1200,
+                        animation: 'fadeIn 0.3s ease-out',
+                        '@keyframes fadeIn': {
+                            from: { opacity: 0 },
+                            to: { opacity: 1 },
+                        },
+                        display: { xs: 'block', lg: 'none' },
+                    }}
+                />
+            )}
+
+            {/* Sidebar Panel */}
+            <Paper
+                elevation={3}
+                sx={{
+                    position: { xs: 'fixed', lg: 'relative' },
+                    top: { xs: 0, lg: 'auto' },
+                    left: { xs: 0, lg: 'auto' },
+                    bottom: { xs: 0, lg: 'auto' },
+                    width: { xs: 400, lg: '100%' },
+                    maxWidth: { xs: '85vw', lg: 'none' },
+                    height: { xs: '100vh', lg: 'auto' },
+                    bgcolor: { xs: 'background.paper', lg: '#f5f5f5' },
+                    zIndex: { xs: 1300, lg: 'auto' },
+                    p: 3,
+                    borderRadius: { xs: 0, lg: '8px 0 0 8px' },
+                    overflowY: 'auto',
+                    transform: open ? 'translateX(0)' : { xs: 'translateX(-100%)', lg: 'translateX(0)' },
+                    transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                    display: { xs: open ? 'block' : 'none', lg: open ? 'block' : 'none' },
+                }}
+            >
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                    <Typography variant="h6">
                         Quick Access
                     </Typography>
+                    <IconButton onClick={onClose} size="small" sx={{ display: { xs: 'block', lg: 'none' } }}>
+                        <CloseIcon />
+                    </IconButton>
+                </Box>
 
                     <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 2 }}>
                         <Tab label="Quick Links" />
@@ -286,8 +333,7 @@ export default function Sidebar({
                             ))}
                         </List>
                     </TabPanel>
-                </Box>
-            </Drawer>
+            </Paper>
 
             {/* Quick Link Dialog */}
             <Dialog open={linkDialogOpen} onClose={() => setLinkDialogOpen(false)} maxWidth="sm" fullWidth>
